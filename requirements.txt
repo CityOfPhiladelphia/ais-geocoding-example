@@ -1,0 +1,3 @@
+requests
+retrying
+smart_open
