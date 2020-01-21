@@ -4,23 +4,14 @@ import requests
 from retrying import retry
 import datetime
 from smart_open import open
+from config import ais_url, ais_response_fields_for_output,geocode_field,gatekeeper_key,input_fields_for_output,params, input_file, output_file
 
 # Logging Params:
 today = datetime.date.today()
-logfile = 'ais_geocode_log_{}.txt'.format(today)
+logfile = 'ais_geocode_log3_{}.txt'.format(today)
 logging.basicConfig(filename=logfile, level=logging.INFO, format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
 
-# I/O Params:
-input_file = 'ais_geocode_example_input.csv' # Name of input file
-output_file = 'ais_geocode_example_output.csv' # Name of output file
 
-# Request Params:
-ais_url = 'http://api-test.phila.gov/ais/v1/search/'
-geocode_field = 'street_address' # Field in input file to send to API for geocoding
-input_fields_for_output = [''] # List of fields in input file to include in output file. If none then will use include all input fields in output.
-ais_response_fields_for_output = ['opa_account_num', 'lon', 'lat'] # List of AIS response fields to include in output file
-gatekeeper_key = 'ENTER GATEKEEPER KEY HERE' # Enter your gatekeeper key given to you for your geocoding usage
-params = {'gatekeeperKey': gatekeeper_key} # Add other key/value pairs of params (see options in docs @ https://github.com/CityOfPhiladelphia/ais/blob/master/docs/APIUSAGE.md
 
 # Setup:
 session = requests.session()
@@ -36,6 +27,7 @@ def geocode(request):
     global params
     try:
         response = session.get(request, params=params, timeout=10)
+        logging.info(response)
     except Exception as e:
         raise e
     return response.json()
