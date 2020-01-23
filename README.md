@@ -1,5 +1,5 @@
 # Example AIS Geocoder Package
-This package is intended to serve as an example of how to use the AIS API in Python. 
+This package is intended to serve as an example of how to use the AIS API with Python. 
 It is designed as an out-of-the-box tool which takes an input csv containing an address or account number field to be sent to the API, a config file specifying the input fields as well as the AIS repsonse fields to be outputted, and outputs the data to an output csv.
 
 ## Installation
