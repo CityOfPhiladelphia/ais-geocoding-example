@@ -5,16 +5,15 @@ This is a simple example package. You can use
 to write your content.
 
 ## Installation
-```pip install sample-ais-geocoder```
-
-
-## Usage
 Address Standardizer
 
-    This package can be installed py opening the command line, from a directory of your choice on your local machine. 
-   Type: ` pip install git+https://github.com/CityOfPhiladelphia/ais-geocoding-example.git`
+   This package can be installed py opening the command line, from a directory of your choice on your local machine via this command: 
+ 
+    pip install git+https://github.com/CityOfPhiladelphia/ais-geocoding-example.git
     
-From the project files, look for the file called `sample_config.py`. In order for this package to work, you will need to change the following variables: 
+
+## Usage
+From the project files, look for the file called [sample_config.py](sample_config.py). In order for this package to work, you will need to change the following variables: 
 
 - `input_file` will need to be the full path to the csv file with addresses you need geocoded. (This should have a clean address field as referenced [here](ais_geocoding_example_input.csv).
 - `output_file` will need to be the destination and name of the new file you want the package to output with geocoded addresses.
