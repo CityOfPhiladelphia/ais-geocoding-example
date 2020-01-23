@@ -1,11 +1,6 @@
 # Example AIS Geocoder Package
-
-This is a simple example package. You can use
-[Github-flavored Markdown](https://guides.github.com/features/mastering-markdown/)
-to write your content.
-
-## Installation
 Address Standardizer
+## Installation
 
    This package can be installed py opening the command line, from a directory of your choice on your local machine via this command: 
  
