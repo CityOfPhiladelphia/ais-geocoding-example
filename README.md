@@ -14,8 +14,8 @@ This package can be installed by opening the command line, from a directory of y
 #### Setup
 From the project files, look for the file called [sample_config.py](sample_config.py). In order for this package to work, you will need to change the following variables: 
 
-- `input_file` will need to be the full path to the csv file with addresses you need geocoded. (This should have a clean address or account number field, [for example](ais_geocoding_example_input.csv).
-- `output_file` will need to be the destination and name of the new file you want the package to output.
+- `input_file` will need to be the path to the input csv file with addresses/account #s you need geocoded. (This should have a clean address or account number field, [for example](ais_geocoding_example_input.csv).
+- `output_file` should be the path to the output file you want the package to write.
 - `ais_response_fields_for_output` Here the default is the OPA Account Number and lat long coordinates. However, you may want to add other fields depending on your departmental needs. Here's a list of some [optional parameters](https://github.com/CityOfPhiladelphia/ais/blob/master/docs/APIUSAGE.md#ais-feature-types). 
 - `gatekeeper_key` this key is necessary for the api to work. Request one by emailing maps@phila.gov 
 
