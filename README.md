@@ -14,9 +14,11 @@ This package can be installed by opening the command line, from a directory of y
 #### Setup
 From the project files, look for the file called [sample_config.py](sample_config.py). In order for this package to work, you will need to change the following variables: 
 
-- `input_file` will need to be the path to the input csv file with addresses/account #s you need geocoded. (This should have a clean address or account number field, [for example](ais_geocoding_example_input.csv).
-- `output_file` should be the path to the output file you want the package to write.
-- `ais_response_fields_for_output` Here the default is the OPA Account Number and lat long coordinates. However, you may want to add other fields depending on your departmental needs. Here's a list of some [optional parameters](https://github.com/CityOfPhiladelphia/ais/blob/master/docs/APIUSAGE.md#ais-feature-types). 
+- `input_file`: The name of the input csv file with addresses/account #s you need geocoded. (This should have a clean address or account number field, [for example](ais_geocoding_example_input.csv)).
+- `output_file`: is the name of the output file you want the package to create.
+- `geocode_field`: Name of field in input file that contains the data to be sent to the API. This field can be an _address, block, intersection, OPA account number, Regmap ID and coordinates_. Our sample specifies an address. See documentation for [details](https://github.com/CityOfPhiladelphia/ais/blob/master/docs/APIUSAGE.md#search). 
+- `input_fields_for_output`: A list of fields from the input csv that should be included in the output csv. If left empty, all fields from the input csv will be included in the output csv.
+- `ais_response_fields_for_output` List of fields from the AIS API response object to be included in the output csv. [Other fields](https://github.com/CityOfPhiladelphia/ais/blob/master/docs/APIUSAGE.md#ais-feature-types) can additionally be included. 
 - `gatekeeper_key` this key is necessary for the api to work. Request one by emailing maps@phila.gov 
 
 #### Run
