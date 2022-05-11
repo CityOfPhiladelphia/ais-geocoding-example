@@ -1,8 +1,13 @@
-id,street_address
-1,1234 market st
-2,200 s broad st
-3,130 n 5th st
-4,400 locust st
-5,500 chestnut st
-6,8 asd;fas ave
-7,4th and market st
+id,street_address,city
+1,1234 market st,philadelphia
+2,200 s broad st,philadelphia
+3,130 n 5th st,philadelphia
+4,400 locust st,
+5,500 chestnut st,PHILA
+6,8 asd;fas ave,
+7,4th and market st,
+8,845 radnor street road wayne,
+9,5 E Lancaster Ave Ardmore PA 19003,
+10,2616 E County Line Rd Ardmore PA 19003,
+11,30 White Horse Pike Collingswood NJ 08107,
+12,737 Huntingdon Pike Huntingdon Valley PA 19006,
