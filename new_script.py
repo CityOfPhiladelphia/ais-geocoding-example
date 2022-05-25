@@ -1,6 +1,6 @@
 import petl as etl
 import geopetl
-from config import aisCredentials, source_creds
+from config import aisCredentials, source_creds,geocode_srid
 from passyunk.parser import PassyunkParser
 import requests
 import cx_Oracle
@@ -57,7 +57,6 @@ def tomtom_request(street_str,srid):
         top_candidate = [top_candidate.get('x') ,top_candidate.get('y')]
     except:
         print('failed to geocode ', street_str)
-        print('\n\n')
         return ['NA','NA']
     return top_candidate
 
@@ -70,38 +69,29 @@ target_conn = cx_Oracle.connect(source_creds.get('username'), source_creds.get('
 target_cursor = target_conn.cursor()
 
 # # address summary table fields
-# if geocode_srid == 2272:
-#     adrsum_fields = ['street_address', 'geocode_x', 'geocode_y']
-# else:
-#     adrsum_fields = ['street_address', 'geocode_lon', 'geocode_lat']
-adrsum_fields = ['street_address', 'geocode_x', 'geocode_y', 'geocode_lon', 'geocode_lat']
+if geocode_srid == 2272:
+    adrsum_fields = ['street_address', 'geocode_x', 'geocode_y']
+else:
+    adrsum_fields = ['street_address', 'geocode_lon', 'geocode_lat']
 
 # extract data from source table
 address_summary_rows = etl.fromoraclesde(target_conn, 'ADDRESS_SUMMARY', fields=adrsum_fields)
+#address_summary_rows.tocsv('address_summary_{}'.format(geocode_srid))
 #address_summary_rows = etl.fromcsv('address_summary_{}.csv'.format(geocode_srid))
 
 parser = PassyunkParser()
 #input address data from input csv
 input_address = etl.fromcsv('ais_geocoding_example_input.csv')#[adrsum_fields]
-# add standardized address column to input csv
+# add standardized address column to input csv using passyunk parser
 input_address = input_address.addfield('addr_std', lambda p: parser.parse(p.street_address)['components']['output_address'])
 
 #join input data with source table data
 joined_addresses_to_address_summary = etl.leftjoin(input_address, address_summary_rows, lkey='addr_std', rkey='street_address', presorted=False )
-joined_addresses_to_address_summary.tocsv('test_joined_addresses_unsorted_{}.csv'.format(geocode_srid))
-# joined_addresses_to_address_summary = etl.fromcsv('test_joined_addresses_unsorted_{}.csv'.format(geocode_srid))
+#joined_addresses_to_address_summary.tocsv('test_joined_addresses_unsorted_{}.csv'.format(geocode_srid))
+#joined_addresses_to_address_summary = etl.fromcsv('test_joined_addresses_unsorted_{}.csv'.format(geocode_srid))
 
 #joined_table header
 header = list(etl.fieldnames(joined_addresses_to_address_summary))
-# modify header
-if 'geocode_x' in header:
-    header[header.index('geocode_x')] = 'x'
-elif 'geocode_lon' in header:
-    header[header.index('geocode_lon')] = 'x'
-if 'geocode_y' in header:
-    header[header.index('geocode_y')] = 'y'
-elif 'geocode_lat' in header:
-    header[header.index('geocode_lat')] = 'y'
 
 newlist = []
 for row in joined_addresses_to_address_summary[1:]:
@@ -111,7 +101,7 @@ for row in joined_addresses_to_address_summary[1:]:
         newlist.append(rowzip)
         continue
     elif rowzip.get('city'):
-        srid = geocode_srid#rowzip.get('srid')
+        srid = rowzip.get('srid')
         if rowzip.get('city') == 'philadelphia':
             geocoded = ais_request(rowzip.get('street_address'),str(srid))
         else:  # city is not philly
@@ -123,13 +113,19 @@ for row in joined_addresses_to_address_summary[1:]:
         else:
             try:
                 geocoded = ais_request(rowzip.get('street_address'),str(srid))
-                print('AIS geocoded ', geocoded)
             except:
                 geocoded = tomtom_request(rowzip.get('street_address'),str(srid))
-    rowzip['x'] = geocoded[0]
-    rowzip['y'] = geocoded[1]
+                
+    #insert coordinates in row
+    if geocode_srid== 2272:
+        rowzip['geocode_x'] = geocoded[0]
+        rowzip['geocode_y'] = geocoded[1]
+    elif geocode_srid== 4326:
+        rowzip['geocode_lon'] = geocoded[0]
+        rowzip['geocode_lat'] = geocoded[1]
+
     newlist.append(rowzip)
 
 newframe = etl.fromdicts(newlist,header=header)
-newframe.tocsv('geocoded_output.csv')
+newframe.tocsv('geocoded_output_{}.csv'.format(geocode_srid))
 
