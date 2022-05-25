@@ -101,21 +101,20 @@ for row in joined_addresses_to_address_summary[1:]:
         newlist.append(rowzip)
         continue
     elif rowzip.get('city'):
-        srid = rowzip.get('srid')
         if rowzip.get('city') == 'philadelphia':
-            geocoded = ais_request(rowzip.get('street_address'),str(srid))
+            geocoded = ais_request(rowzip.get('street_address'),str(geocode_srid))
         else:  # city is not philly
-            geocoded = tomtom_request(rowzip.get('street_address'),str(srid))
+            geocoded = tomtom_request(rowzip.get('street_address'),str(geocode_srid))
     else:  # if no city column
         # if philadelphia in address use ais else try tomtom
         if 'philadelphia' in rowzip.get('street_address'):
-            geocoded = ais_request(rowzip.get('street_address'),str(srid))
+            geocoded = ais_request(rowzip.get('street_address'),str(geocode_srid))
         else:
             try:
-                geocoded = ais_request(rowzip.get('street_address'),str(srid))
+                geocoded = ais_request(rowzip.get('street_address'),str(geocode_srid))
             except:
-                geocoded = tomtom_request(rowzip.get('street_address'),str(srid))
-                
+                geocoded = tomtom_request(rowzip.get('street_address'),str(geocode_srid))
+
     #insert coordinates in row
     if geocode_srid== 2272:
         rowzip['geocode_x'] = geocoded[0]
