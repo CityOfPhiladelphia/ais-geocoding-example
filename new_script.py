@@ -4,7 +4,12 @@ from config import aisCredentials, source_creds,geocode_srid
 from passyunk.parser import PassyunkParser
 import requests
 import cx_Oracle
-import datetime as dt
+
+# given input data containing street and srid values try to get standardized street address using passayunk parser
+# try to get coordinates by joining with  address_summary table
+# else get coordinates corresponding using AIS api or tomtom api
+# note: srid can be set to 2272 or 4326. (set in config-> geocode_srid)
+
 
 # request AIS for X and Y coordinates
 def ais_request(address_string,srid):
@@ -19,8 +24,7 @@ def ais_request(address_string,srid):
     request = request+'?srid='+srid
     try:
         r = requests.get(request, params=params)
-        print('ais request response')
-        if r.status_code ==404 :
+        if r.status_code == 404:
             print('404 error')
             raise
     except Exception as e:
@@ -51,6 +55,7 @@ def tomtom_request(street_str,srid):
     except Exception as e:
         print("Failed tomtom request")
         raise e
+
     # try to get a top address candidate if any
     try:
         top_candidate =  r.json().get('candidates')[0].get('location')
@@ -61,70 +66,77 @@ def tomtom_request(street_str,srid):
     return top_candidate
 
 
-# conect to source table
-target_dsn = cx_Oracle.makedsn(source_creds.get('dsn').get('host'),
-                               source_creds.get('dsn').get('port'),
-                               service_name=source_creds.get('dsn').get('service_name'))
-target_conn = cx_Oracle.connect(source_creds.get('username'), source_creds.get('password'), target_dsn)
-target_cursor = target_conn.cursor()
 
-# # address summary table fields
-if geocode_srid == 2272:
-    adrsum_fields = ['street_address', 'geocode_x', 'geocode_y']
-else:
-    adrsum_fields = ['street_address', 'geocode_lon', 'geocode_lat']
+def main():
+    # conect to source table
+    source_dsn = cx_Oracle.makedsn(source_creds.get('host'),
+                                   source_creds.get('port'),
+                                   service_name=source_creds.get('service_name'))
+    source_conn = cx_Oracle.connect(source_creds.get('user'), source_creds.get('password'), source_dsn)
 
-# extract data from source table
-address_summary_rows = etl.fromoraclesde(target_conn, 'ADDRESS_SUMMARY', fields=adrsum_fields)
-#address_summary_rows.tocsv('address_summary_{}'.format(geocode_srid))
-#address_summary_rows = etl.fromcsv('address_summary_{}.csv'.format(geocode_srid))
+    # required address_summary (source) table fields
+    if geocode_srid == 2272:
+        adrsum_fields = ['street_address', 'geocode_x', 'geocode_y']
+    else:
+        adrsum_fields = ['street_address', 'geocode_lon', 'geocode_lat']
 
-parser = PassyunkParser()
-#input address data from input csv
-input_address = etl.fromcsv('ais_geocoding_example_input.csv')#[adrsum_fields]
-# add standardized address column to input csv using passyunk parser
-input_address = input_address.addfield('addr_std', lambda p: parser.parse(p.street_address)['components']['output_address'])
+    # query data from source table
+    address_summary_rows = etl.fromoraclesde(source_conn, 'ADDRESS_SUMMARY',fields=adrsum_fields, limit=5000)
 
-#join input data with source table data
-joined_addresses_to_address_summary = etl.leftjoin(input_address, address_summary_rows, lkey='addr_std', rkey='street_address', presorted=False )
-#joined_addresses_to_address_summary.tocsv('test_joined_addresses_unsorted_{}.csv'.format(geocode_srid))
-#joined_addresses_to_address_summary = etl.fromcsv('test_joined_addresses_unsorted_{}.csv'.format(geocode_srid))
+    # get input address test data from input csv
+    input_address = etl.fromcsv('ais_geocoding_example_input.csv')
 
-#joined_table header
-header = list(etl.fieldnames(joined_addresses_to_address_summary))
+    #passayunk instance
+    parser = PassyunkParser()
 
-newlist = []
-for row in joined_addresses_to_address_summary[1:]:
-    rowzip = dict(zip(header, row))  # dictionary from etl data
-    #if there is a longitude coordinates from address summary continue
-    if rowzip.get('geocode_lon'):
-        newlist.append(rowzip)
-        continue
-    elif rowzip.get('city'):
-        if rowzip.get('city') == 'philadelphia':
-            geocoded = ais_request(rowzip.get('street_address'),str(geocode_srid))
-        else:  # city is not philly
-            geocoded = tomtom_request(rowzip.get('street_address'),str(geocode_srid))
-    else:  # if no city column
-        # if philadelphia in address use ais else try tomtom
-        if 'philadelphia' in rowzip.get('street_address'):
-            geocoded = ais_request(rowzip.get('street_address'),str(geocode_srid))
-        else:
-            try:
+    # add standardized address column to input csv using passyunk parser
+    input_address = input_address.addfield('address_std', lambda p: parser.parse(p.street_address)['components']['output_address'])
+
+    #join input data with source table data on standardized street address
+    joined_addresses_to_address_summary = etl.leftjoin(input_address, address_summary_rows, lkey='address_std', rkey='street_address', presorted=False )
+
+    # new joined table header with standardized street address field
+    header = list(etl.fieldnames(joined_addresses_to_address_summary))
+
+    #empty list to store row with coordinates
+    newlist = []
+
+    # iterate over rows to geocode each address
+    for row in joined_addresses_to_address_summary[1:]:
+        rowzip = dict(zip(header, row))  # dictionary from etl data
+        #if there is a longitude or x coordinates field retrieved from joining wiht address summary table,  continue
+        if rowzip.get('geocode_lon') or rowzip.get('geocode_x'):
+            newlist.append(rowzip)
+            continue
+        # if city column provided and is Philadelphia -> use AIS to geocode, if not Philadelphia use TomTom
+        elif rowzip.get('city'):
+            if rowzip.get('city') == 'philadelphia':
                 geocoded = ais_request(rowzip.get('street_address'),str(geocode_srid))
-            except:
+            else:  # city is not philly so use tomtom
                 geocoded = tomtom_request(rowzip.get('street_address'),str(geocode_srid))
 
-    #insert coordinates in row
-    if geocode_srid== 2272:
-        rowzip['geocode_x'] = geocoded[0]
-        rowzip['geocode_y'] = geocoded[1]
-    elif geocode_srid== 4326:
-        rowzip['geocode_lon'] = geocoded[0]
-        rowzip['geocode_lat'] = geocoded[1]
+        # if no city column available, try AIS then TomTom
+        else:
+            try:
+                geocoded = ais_request(rowzip.get('street_address'), str(geocode_srid))
+            except:
+                geocoded = tomtom_request(rowzip.get('street_address'), str(geocode_srid))
 
-    newlist.append(rowzip)
+        #insert geocoded coordinates in row with corresponding desired SRID value
+        if geocode_srid== 2272:
+            rowzip['geocode_x'] = geocoded[0]
+            rowzip['geocode_y'] = geocoded[1]
+        elif geocode_srid== 4326:
+            rowzip['geocode_lon'] = geocoded[0]
+            rowzip['geocode_lat'] = geocoded[1]
 
-newframe = etl.fromdicts(newlist,header=header)
-newframe.tocsv('geocoded_output_{}.csv'.format(geocode_srid))
+        # append result row
+        newlist.append(rowzip)
 
+    # write new geocoded coordinate results to memory
+    newframe = etl.fromdicts(newlist,header=header)
+    newframe.tocsv('geocoded_output_{}.csv'.format(geocode_srid))
+
+
+if __name__ == "__main__":
+    main()
