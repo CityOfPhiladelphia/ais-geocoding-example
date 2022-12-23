@@ -10,3 +10,15 @@ input_fields_for_output = [''] # List of fields in input file to include in outp
 ais_response_fields_for_output = ['opa_account_num', 'lon', 'lat'] # Sample list of AIS response fields to include in output file
 gatekeeper_key = 'XXXXXXXX' # Enter your gatekeeper key given to you for your geocoding usage
 params = {'gatekeeperKey': gatekeeper_key} # Add other key/value pairs of params (see options in docs @ https://github.com/CityOfPhiladelphia/ais/blob/master/docs/APIUSAGE.md
+
+
+aisCredentials = {'gatekeeperKey' : 'XXXXXXXX',
+                  'url':'https://api.phila.gov/ais/v1/search/'}
+
+source_creds = {'host': '',
+                'port': '',
+                'service_name':'',
+                'user':'',
+                'password':''
+                }
+geocode_srid = 2272 # 4326
