@@ -6,7 +6,7 @@ import requests
 import cx_Oracle
 
 # given input data containing street and srid values try to get standardized street address using passayunk parser
-# try to get coordinates by joining with  address_summary table
+# try to get coordinates by joining with address_summary table
 # else get coordinates corresponding using AIS api or tomtom api
 # note: srid can be set to 2272 or 4326. (set in config-> geocode_srid)
 
