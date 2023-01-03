@@ -1,3 +1,7 @@
 requests
 retrying
 smart_open
+passyunk==1.0
+petl==1.7.12
+cx-Oracle==8.3.0
+geopetl @ git+https://github.com/CityOfPhiladelphia/geopetl@53e1f470574a5c0b0b9cbde5a19fbdd7518312b9

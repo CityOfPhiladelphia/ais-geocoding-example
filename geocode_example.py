@@ -1,14 +1,21 @@
 import petl as etl
 import geopetl
-from config import aisCredentials, source_creds,geocode_srid
 from passyunk.parser import PassyunkParser
 import requests
 import cx_Oracle
+from config import aisCredentials, source_creds,geocode_srid
 
 # given input data containing street and srid values try to get standardized street address using passayunk parser
 # try to get coordinates by joining with address_summary table
 # else get coordinates corresponding using AIS api or tomtom api
 # note: srid can be set to 2272 or 4326. (set in config-> geocode_srid)
+
+# requirements
+# access to ais summary table and ais api key
+# To obtain a key:
+# Email ithelp@phila.gov to create a new support ticket, and copy maps@phila.gov on the email.
+# Request that IT Help route the ticket to CityGeo.
+# Describe the application that will be using AIS and provide a URL if possible.
 
 
 # request AIS for X and Y coordinates
