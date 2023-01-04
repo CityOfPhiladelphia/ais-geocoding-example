@@ -30,7 +30,7 @@ def ais_request(address_string,srid):
     request = "{ais_url}{geocode_field}".format(ais_url=ais_url, geocode_field=address_string)
     try:
         r = requests.get(request, params=params)
-        r.raise_for_status() # Will flag 404 error or any other 400+ or 500+ error
+        r.raise_for_status() # Will flag any 400+ or 500+ error
     except Exception as e:
         print("Failed AIS request")
         raise e
