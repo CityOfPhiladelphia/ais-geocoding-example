@@ -3,6 +3,7 @@ import geopetl
 from passyunk.parser import PassyunkParser
 import requests
 import cx_Oracle
+import csv
 from config import aisCredentials, source_creds,geocode_srid
 
 # given input data containing street and srid values try to get standardized street address using passayunk parser
@@ -62,7 +63,6 @@ def tomtom_request(street_str,srid):
     except Exception as e:
         print("Failed tomtom request")
         raise e
-
     # try to get a top address candidate if any
     try:
         top_candidate =  r.json().get('candidates')[0].get('location')
@@ -87,8 +87,16 @@ def main():
     else:
         adrsum_fields = ['street_address', 'geocode_lon', 'geocode_lat']
 
-    # query data from source table
-    address_summary_rows = etl.fromoraclesde(source_conn, 'ADDRESS_SUMMARY',fields=adrsum_fields, limit=5000)
+    # download address summary using requests
+    response = requests.get('https://opendata-downloads.s3.amazonaws.com/address_summary.csv')
+    lines = response.text.splitlines()
+    mydata = [s.split(',') for s in lines]
+    # save address summary table to memory
+    with open('address_summary_fields.csv', 'w', encoding='UTF8', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerows(mydata)
+    # load address summary data from csv to petl frame
+    address_summary_rows = etl.fromcsv('address_summary_fields.csv').cut(adrsum_fields)
 
     # get input address test data from input csv
     input_address = etl.fromcsv('ais_geocoding_example_input.csv')
@@ -99,7 +107,7 @@ def main():
     # add standardized address column to input csv using passyunk parser
     input_address = input_address.addfield('address_std', lambda p: parser.parse(p.street_address)['components']['output_address'])
 
-    #join input data with source table data on standardized street address
+    #join input data with address summary table data on standardized street address column
     joined_addresses_to_address_summary = etl.leftjoin(input_address, address_summary_rows, lkey='address_std', rkey='street_address', presorted=False )
 
     # new joined table header with standardized street address field
@@ -121,7 +129,6 @@ def main():
                 geocoded = ais_request(rowzip.get('street_address'),str(geocode_srid))
             else:  # city is not philly so use tomtom
                 geocoded = tomtom_request(rowzip.get('street_address'),str(geocode_srid))
-
         # if no city column available, try AIS then TomTom
         else:
             try:
@@ -136,7 +143,6 @@ def main():
         elif geocode_srid== 4326:
             rowzip['geocode_lon'] = geocoded[0]
             rowzip['geocode_lat'] = geocoded[1]
-
         # append result row
         newlist.append(rowzip)
 
