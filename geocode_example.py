@@ -97,14 +97,6 @@ def main():
         print('invalid srid')
         raise
 
-    # # load address summary data from csv to petl frame
-    # address_summary_rows = etl.fromcsv('address_summary_fields.csv').cut(adrsum_fields)
-    # if geocode_srid == 2272:
-    #     address_summary_rows = etl.rename(address_summary_rows, {'geocode_x': 'x_coordinate', 'geocode_y': 'y_coordinate'})
-    # elif geocode_srid == 4326:
-    #     address_summary_rows = etl.rename(address_summary_rows,{'geocode_lon': 'x_coordinate', 'geocode_lat': 'y_coordinate'})
-    #
-
     # get input address test data from input csv
     input_addresses = etl.fromcsv('ais_geocoding_example_input.csv')
 
@@ -114,12 +106,12 @@ def main():
     # try to get state and city using open source parser
     for row in input_addresses[1:]:
         mydict = dict(zip(input_addresses[0],row))
-        # try to get state info
+        # try to get state info using open source parser
         if not mydict.get('state'):
             res = parse_location(mydict.get('street_address'))
             if res.get('state'):
                 mydict['state'] = res.get('state')
-        # try to get city info
+        # try to get city info using open source parser
         if not mydict.get('city') or mydict.get('city').lower() != 'philadelphia':
             res = parse_location(mydict['street_address'])
             if res.get('city'):
@@ -138,22 +130,23 @@ def main():
 
     #join input data with address summary table data on standardized street address column
     joined_addresses_to_address_summary = etl.leftjoin(input_addresses, address_summary_rows, lkey='address_std', rkey='street_address', presorted=False )
-    print('addresses joined')
-    print(etl.look(joined_addresses_to_address_summary, limit=12))
+
     dict_frame = []
     for row in joined_addresses_to_address_summary[1:]:
         rowzip = dict(zip(joined_addresses_to_address_summary[0], row))
+        # address already has coordinates from join
         if rowzip.get('x_coordinate'):
-            #address already has coordinates
             dict_frame.append(rowzip)
             continue
+        # address does not have coordinates from join
         else:
-            # if we have standardized address use them for apis else use street address field
+            # if we have standardized address use them for apis else
             if rowzip.get('address_std'):
                 try:
                     geocoded = ais_request(rowzip.get('address_std'), str(geocode_srid))
                 except:
                     geocoded = tomtom_request(rowzip.get('address_std'), str(geocode_srid))
+            # else use street address input field
             else:
                 try:
                     geocoded = ais_request(rowzip.get('street_address'), str(geocode_srid))
