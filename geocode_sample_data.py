@@ -11,9 +11,9 @@ from config import ais_url, gatekeeperKey, source_creds, geocode_srid, ais_qry, 
 
 # input data = https://www.kaggle.com/datasets/ahmedshahriarsakib/list-of-real-usa-addresses?resource=download
 # given input data containing street and srid values try to get standardized street address using passayunk parser
-# if it's in philly. If its outside of philly, use open source parser addresset
+# if it's in philly. If its outside of philly, use open source parser addresser
 # try to get coordinates by joining with address_summary table
-# else get coordinates corresponding using AIS api or tomtom api
+# else: use apis to get coordinates (AIS for philly addresses and tomtom for addresses outside of philly)
 # note: srid can be set to 2272 or 4326. (set in config-> geocode_srid)
 
 # requirements
@@ -28,11 +28,11 @@ from config import ais_url, gatekeeperKey, source_creds, geocode_srid, ais_qry, 
 def ais_request(address_string,srid):
     '''
     :param address_string:
-    :param srid:
+    :param srid: integer
     :return: list containing X and Y coordinates
     '''
     params = gatekeeperKey
-    request_str = ais_qry.format(ais_url=ais_url, geocode_field=address_string,srid=geocode_srid)
+    request_str = ais_qry.format(ais_url=ais_url, geocode_field=address_string,srid=srid)
     try:
         r = requests.get(request_str, params=params)
         if r.status_code == 404:
@@ -55,18 +55,17 @@ def ais_request(address_string,srid):
 def tomtom_request(address='no address', city=None, state= None,zip=None,srid=2272):
     '''
     :param address_string: string
-    :param srid:
+    :param srid: integer
     :return: list containing X and Y coordinates
     '''
     s = address.split(' ')
     address = '+'.join(s)
-    request_str = my_tomtom_qry.format(address = address, city = city,
+    request_str = tomtom_qry.format(address = address, city = city,
                                     state = state, zip = zip, srid = srid)
     # send request to tomtom
     try:
         r = requests.get(request_str)
     except Exception as e:
-        #print("Failed tomtom request")
         logging.info(request_str)
         raise e
     # try to get a top address candidate if any
@@ -85,18 +84,19 @@ def tomtom_request(address='no address', city=None, state= None,zip=None,srid=22
 def main():
     # Logging Params:
     today = datetime.date.today()
-    logfile = 'ais_geocode_log3_{}.txt'.format(today)
+    logfile = 'geocode_sample_data_log_{}.txt'.format(today)
     logging.basicConfig(filename=logfile, level=logging.INFO,
                         format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
     logging.info('''\n\n------------------------------Geocoding Sample Data------------------------------''')
     # download address summary using requests
-    # response = requests.get('https://opendata-downloads.s3.amazonaws.com/address_summary.csv')
-    # lines = response.text.splitlines()
-    # mydata = [s.split(',') for s in lines]
+    address_summary_data = requests.get('https://opendata-downloads.s3.amazonaws.com/address_summary.csv')
+    address_summary_data = address_summary_data.text.splitlines()
+    address_summary_data = [s.split(',') for s in address_summary_data]
     # # save address summary table to memory
-    # with open('address_summary_fields.csv', 'w', encoding='UTF8', newline='') as f:
-    #     writer = csv.writer(f)
-    #     writer.writerows(mydata)
+    with open('address_summary_fields.csv', 'w', encoding='UTF8', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerows(address_summary_data)
+
     # required address_summary (source) table fields
     if geocode_srid == 2272:
         adrsum_fields = ['street_address', 'geocode_x', 'geocode_y','zip_code']
@@ -117,7 +117,8 @@ def main():
     z = cols['zip_code']
     philly_zipcodes = list(set(z))
     philly_zipcodes.remove('')
-    philly_zipcodes = [int(z) for z in philly_zipcodes]
+    philly_zipcodes = [str(z) for z in philly_zipcodes]
+    address_summary_rows = address_summary_rows.cutout('zip_code')
 
     # get input address test data from input csv
     input_addresses = etl.fromcsv('list_of_real_usa_addresses.csv')
@@ -133,57 +134,58 @@ def main():
         # if city is philly:
         #     use passayunk
         # elif not city:
-        #     use oparser
+        #     use addresser parser
         #     if zip is in philly or city is philly:
         #################################################################
-        input_dict = dict(zip(input_addresses[0],row))
-        input_dict['std_address'] = None
-        address_full = "{} {} {} {}".format(input_dict.get('address'),
-                                            input_dict.get('city'),
-                                            input_dict.get('state'),
-                                            input_dict.get('zip'))
+        row_dict = dict(zip(input_addresses[0],row))
+        row_dict['std_address'] = None
+        address_full = "{} {} {} {}".format(row_dict.get('address'),
+                                            row_dict.get('city'),
+                                            row_dict.get('state'),
+                                            row_dict.get('zip'))
 
-        # if input city or input zip relates to philly
-        if input_dict.get('city') and input_dict.get('city').lower() == 'philadelphia' or \
-                (input_dict.get('zip') and input_dict.get('zip') in philly_zipcodes):
+        # if row dictionary city or input zip relates to philly
+        if row_dict.get('city') and row_dict.get('city').lower() == 'philadelphia' or \
+                (row_dict.get('zip') and row_dict.get('zip') in philly_zipcodes):
             # parse address using passayunk
-            std_address = parser.parse(input_dict.get('address'))
-            input_dict['std_address'] = std_address['components']['output_address']
+            std_address = parser.parse(row_dict.get('address'))
+            row_dict['std_address'] = std_address['components']['output_address']
 
-        # if no city input or city input is not philly and zip not in philly
-        if (not input_dict.get('city') or input_dict.get('city') != 'philadelphia')\
-                and (input_dict.get('zip') and input_dict.get('zip') not in philly_zipcodes):
+        # if no row dictionary city or city is not philly and zip not in philly
+        if (not row_dict.get('city') or row_dict.get('city') != 'philadelphia')\
+                and (row_dict.get('zip') and row_dict.get('zip') not in philly_zipcodes):
             # parse full address using open source parser
             parser_response = parse_location(address_full)
-            if (parser_response and parser_response.get('zip') and parser_response.get('zip') in philly_zipcodes)\
+            # if parser response returns city or zip relating to philly
+            if (parser_response and str(parser_response.get('zip')) and str(parser_response.get('zip')) in philly_zipcodes)\
                 or (parser_response and parser_response.get('city') and parser_response.get('city').lower() == 'philadelphia'):
                 std_address = parser.parse(address_full)
-                input_dict['std_address'] = std_address['components']['output_address']
+                row_dict['std_address'] = std_address['components']['output_address']
 
-            # else:# fill in city or state which seems unecessary?
-            #     #mydict['std_address'] = None
-            if parser_response and parser_response.get('city') and not input_dict.get('city'):
-                input_dict['city'] = parser_response.get('city')
+            # if parser response returns city, state or zip update row dict
+            if parser_response and parser_response.get('city') and not row_dict.get('city'):
+                row_dict['city'] = parser_response.get('city')
                 cityresult = cityresult + 1
-            if parser_response and parser_response.get('state') and not input_dict.get('state'):
-                input_dict['state'] =parser_response.get('state')
+            if parser_response and parser_response.get('state') and not row_dict.get('state'):
+                row_dict['state'] =parser_response.get('state')
                 stateresult = stateresult + 1
-            if parser_response and parser_response.get('zip') and not input_dict.get('zip'):
-                input_dict['zip'] =parser_response.get('zip')
+            if parser_response and parser_response.get('zip') and not row_dict.get('zip'):
+                row_dict['zip'] =parser_response.get('zip')
                 zipresult = zipresult+1
 
-        dict_frame.append(input_dict)
-    # input addresses with std_address field
+        # add input row to output list
+        dict_frame.append(row_dict)
+
+    # input addresses with std_address field and city/state/zip
     header = list(input_addresses[0]).append('std_address')
     input_addresses = etl.fromdicts(dict_frame, header=header)
-
 
     #join input data with address summary table data on standardized street address column
     joined_addresses_to_address_summary = etl.leftjoin(input_addresses, address_summary_rows, lkey='std_address', rkey='street_address', presorted=False )
 
 
-    dict_frame = []
-
+    # empty
+    geocoded_frame = []
     # use apis to get coordinates (AIS for philly addresses and tomtom for addresses outside of philly)
     for row in joined_addresses_to_address_summary[1:]:
         ################################################################
@@ -193,40 +195,41 @@ def main():
         #     use tomtom
         #     if zip is in philly or city is philly:
         #################################################################
-        rowzip = dict(zip(joined_addresses_to_address_summary[0], row))
-        address_full = "{} {} {} {}".format(rowzip.get('address'),
-                                            rowzip.get('city'),
-                                            rowzip.get('state'),
-                                            rowzip.get('zip'))
+        row_dict = dict(zip(joined_addresses_to_address_summary[0], row))
+        address_full = "{} {} {} {}".format(row_dict.get('address'),
+                                            row_dict.get('city'),
+                                            row_dict.get('state'),
+                                            row_dict.get('zip'))
         # address already has coordinates from join
-        if rowzip.get('x_coordinate'):
-            dict_frame.append(rowzip)
+        if row_dict.get('x_coordinate'):
+            geocoded_frame.append(row_dict)
             continue
         # address does not have coordinates from join
         else:
-            geocoded = None
+            coordinates = None
             # if city or  zip relates to philly request ais
-            if rowzip.get('city') and rowzip.get('city').lower() == 'philadelphia' or \
-                    (rowzip.get('zip') and rowzip.get('zip') in philly_zipcodes):
-                geocoded = ais_request(rowzip.get('address'), str(geocode_srid))
+            if row_dict.get('city') and row_dict.get('city').lower() == 'philadelphia' or \
+                    (row_dict.get('zip') and row_dict.get('zip') in philly_zipcodes):
+                coordinates = ais_request(row_dict.get('address'), str(geocode_srid))
             #if city and zip not philly use tomtom
-            elif (not input_dict.get('city') or input_dict.get('city') != 'philadelphia') \
-                    and (input_dict.get('zip') and input_dict.get('zip') not in philly_zipcodes):
-                geocoded = tomtom_request(address=rowzip.get('address'), city=rowzip.get('city'),
-                                          state= rowzip.get('state'),zip=rowzip.get('zip'),srid=geocode_srid)
+            elif (not row_dict.get('city') or row_dict.get('city') != 'philadelphia') \
+                    and (row_dict.get('zip') and row_dict.get('zip') not in philly_zipcodes):
+                coordinates = tomtom_request(address=row_dict.get('address'), city=row_dict.get('city'),
+                                          state= row_dict.get('state'),zip=row_dict.get('zip'),srid=geocode_srid)
 
-            if geocoded:
-                rowzip['x_coordinate'] = geocoded[0]
-                rowzip['y_coordinate'] = geocoded[1]
-                dict_frame.append(rowzip)
+            # if we have coordinates from tomtom or ais, store in dictionary
+            if coordinates:
+                row_dict['x_coordinate'] = coordinates[0]
+                row_dict['y_coordinate'] = coordinates[1]
+                geocoded_frame.append(row_dict)
+            #
             else:
                 logging.info('''unable to geocode {}'''.format(address_full))
 
-    addresses = etl.fromdicts(dict_frame, header=joined_addresses_to_address_summary[0])
-    print('address output')
-    print(etl.look(addresses,limit=22))
-    addresses.tocsv('geocoded_sample_output_{}.csv'.format(geocode_srid))
 
+    geocoded_frame = etl.fromdicts(geocoded_frame, header=joined_addresses_to_address_summary[0])
+    # write geocoded results to memory
+    geocoded_frame.tocsv('geocoded_sample_output_{}.csv'.format(geocode_srid))
 
 if __name__ == "__main__":
     main()
