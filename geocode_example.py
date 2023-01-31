@@ -3,7 +3,7 @@ import geopetl
 from passyunk.parser import PassyunkParser
 import requests
 import csv
-from config import ais_url, gatekeeperKey, source_creds, geocode_srid, ais_qry, tomtom_qry
+from config import ais_url, gatekeeperKey, geocode_srid, ais_qry, tomtom_qry
 from addresser import parse_location
 
 
@@ -62,8 +62,8 @@ def tomtom_request(street_str,srid):
         raise e
     # try to get a top address candidate if any
     try:
-        top_candidate =  r.json().get('candidates')[0].get('location')
-        top_candidate = [top_candidate.get('x') ,top_candidate.get('y')]
+        top_candidate = r.json().get('candidates')[0].get('location')
+        top_candidate = [top_candidate.get('x'), top_candidate.get('y')]
     except:
         print('failed to geocode ', street_str)
         return ['NA','NA']
@@ -80,6 +80,7 @@ def main():
     # with open('address_summary_fields.csv', 'w', encoding='UTF8', newline='') as f:
     #     writer = csv.writer(f)
     #     writer.writerows(mydata)
+
     # required address_summary (source) table fields
     if geocode_srid == 2272:
         adrsum_fields = ['street_address', 'geocode_x', 'geocode_y','zip_code']
@@ -113,40 +114,45 @@ def main():
     for row in input_addresses[1:]:
         mydict = dict(zip(input_addresses[0],row))
         ###################################################
-        # if city is philly:
+        # if city or zip is philly:
         #     use passayunk
         # elif not city:
         #     use oparser
         #     if zip is in philly or city is philly:
         ###################################################
 
-        if mydict.get('city') and mydict.get('city').lower() == 'philadelphia':
+        # if city is philly or zip in philly:
+        if (mydict.get('city') and mydict.get('city').lower() == 'philadelphia') or \
+            (mydict.get('zip') and mydict.get('zip') in philly_zipcodes):
+            #use passayunk for standardized address
             std_address = parser.parse(mydict.get('street_address'))
             mydict['std_address'] = std_address['components']['output_address']
-        if not mydict.get('city'): # if no city input
+        # if no city input
+        if not mydict.get('city'):
+            # use addresser to get city or zip or state
             parser_response = parse_location(mydict.get('street_address'))
+            # if city or zip in philly
             if (parser_response and parser_response.get('zip') and parser_response.get('zip') in philly_zipcodes)\
                 or (parser_response and parser_response.get('city') and parser_response.get('city').lower() == 'philadelphia'):
+                #use passayunk
                 std_address = parser.parse(mydict.get('street_address'))
                 mydict['std_address'] = std_address
-            else:# fill in city or state which seems unecessary?
+            else:# fill in city zip and state info if available from addresser response
                 mydict['std_address'] = None
                 if parser_response and parser_response.get('city') and not mydict.get('city'):
                     mydict['city'] =parser_response.get('city')
-                    cityresult = cityresult + 1
-
                 if parser_response and parser_response.get('state') and not mydict.get('state'):
                     mydict['state'] =parser_response.get('state')
-                    stateresult = stateresult + 1
-
+                if parser_response and parser_response.get('zip') and not mydict.get('zip'):
+                    mydict['state'] =parser_response.get('zip')
         dict_frame.append(mydict)
+
     # input addresses with std_address field
     header = list(input_addresses[0]).append('std_address')
     input_addresses = etl.fromdicts(dict_frame, header=header)
 
     #join input data with address summary table data on standardized street address column
     joined_addresses_to_address_summary = etl.leftjoin(input_addresses, address_summary_rows, lkey='std_address', rkey='street_address', presorted=False )
-
 
     dict_frame = []
 
