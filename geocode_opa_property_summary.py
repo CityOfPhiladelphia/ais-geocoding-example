@@ -10,14 +10,18 @@ import cx_Oracle
 from config import ais_url, gatekeeperKey, source_creds, geocode_srid, ais_qry, tomtom_qry
 
 
-# input data = https://www.kaggle.com/datasets/ahmedshahriarsakib/list-of-real-usa-addresses?resource=download
-# given input data containing street and srid values try to get standardized street address using passayunk parser
-# if it's in philly. If its outside of philly, use open source parser addresser
-# try to get coordinates by joining with address_summary table
-# else: use apis to get coordinates (AIS for philly addresses and tomtom for addresses outside of philly)
+# input data = opa property summary table (fields = MAILING_STREET, MAILING_CITY_STATE, MAILING_ZIP)
 # note: srid can be set to 2272 or 4326. (set in config-> geocode_srid)
+# given input data containing address, city/state and zip values and srid value:
+# if it's in philly, try to get standardized street address using passayunk parser
+# If its outside of philly, use open source parser ADDRESSER
+# with acquired standardized addresses in data frame try to get coordinates by joining with ais address_summary table
+# for rows with missing coordinates: use apis to get coordinates
+# (AIS for philly addresses and tomtom for addresses outside of philly)
+
 
 # requirements
+# access to opa property summary table
 # access to ais summary table and ais api key
 # To obtain a key:
 # Email ithelp@phila.gov to create a new support ticket, and copy maps@phila.gov on the email.
@@ -26,36 +30,36 @@ from config import ais_url, gatekeeperKey, source_creds, geocode_srid, ais_qry, 
 
 
 # request AIS for X and Y coordinates
-def ais_request(address_string,srid):
+def ais_request(address_string,srid=2272):
     '''
     :param address_string:
     :param srid: integer
     :return: list containing X and Y coordinates
     '''
-    params = gatekeeperKey
     request_str = ais_qry.format(ais_url=ais_url, geocode_field=address_string,srid=srid)
     try:
-        r = requests.get(request_str, params=params)
+        r = requests.get(request_str, params=gatekeeperKey)
         if r.status_code == 404:
-            print('404 error')
+            logging.info('404 error')
+            print('AIS 404 error!!')
             logging.info(request_str)
-            #raise
     except Exception as e:
-        print("Failed AIS request")
-        logging.info('''failed request for {}'''.format(address_string))
+        logging.info('''failed AIS request for {}'''.format(address_string))
         logging.info(request_str)
         raise e
     # extract coordinates from json request response
     feats = r.json()['features'][0]
     geo = feats.get('geometry')
-    coords = geo.get('coordinates')
-    return coords
-
+    coordinates = geo.get('coordinates')
+    return coordinates
 
 # request tomtom for X and Y coordinates
-def tomtom_request(address='no address', city=None, state= None,zip=None,srid=2272):
+def tomtom_request(address='no address', city=None, state=None,zip=None,srid=2272):
     '''
     :param address_string: string
+    :param city: string
+    :param state: string
+    :param zip: string
     :param srid: integer
     :return: list containing X and Y coordinates
     '''
@@ -67,20 +71,11 @@ def tomtom_request(address='no address', city=None, state= None,zip=None,srid=22
     # send request to tomtom
     try:
         r = requests.get(request_str)
-    except Exception as e:
-        logging.info(request_str)
-        raise e
-    # try to get a top address candidate if any
-    try:
         top_candidate = r.json().get('candidates')[0].get('location')
-        top_candidate = [top_candidate.get('x'), top_candidate.get('y')]
-    except:
-        logging.info('''failed tomtom request for {}'''.format(address))
-        logging.info(request_str)
-        logging.info('')
-        return ['NA','NA']
-    return top_candidate
-
+        coordinates = [top_candidate.get('x'), top_candidate.get('y')]
+        return coordinates
+    except Exception as e:
+        logging.info('''failed TOMTOM request for {}'''.format(address))
 
 def main():
     # Logging Params:
@@ -141,7 +136,7 @@ def main():
     for row in input_addresses[1:]:
         ################################################################
         # if city is philly:
-        #     use passayunk
+        #     try passayunk
         # elif not city:
         #     use addresser parser
         #     if zip is in philly or city is philly:
@@ -196,15 +191,15 @@ def main():
     for row in joined_addresses_to_address_summary[1:]:
         ################################################################
         # if city or zip is philly:
-        #     use ais
+        #     try request ais
+        #     except request tomtom
         # elif city and zip not philly  :
-        #     use tomtom
-        #     if zip is in philly or city is philly:
-        #################################################################
+        #     try tomtom
+        #     except coordinates NA NA
+        #     #################################################################
         row_dict = dict(zip(joined_addresses_to_address_summary[0], row))
-        address_full = "{} {} {} {}".format(row_dict.get('address'),
+        address_full = "{} {} {}".format(row_dict.get('address'),
                                             row_dict.get('city'),
-                                            row_dict.get('state'),
                                             row_dict.get('zip'))
         # address already has coordinates from join
         if row_dict.get('x_coordinate'):
@@ -221,6 +216,9 @@ def main():
                 except:
                     coordinates = tomtom_request(address=row_dict.get('address'), city=row_dict.get('city'),
                                                  zip=row_dict.get('zip'), srid=geocode_srid)
+                    print('%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%')
+                else:
+                    coordinates = ['NA','NA']
             #if city and zip not philly use tomtom
             elif (not row_dict.get('city') or row_dict.get('city') != 'philadelphia') \
                     and (row_dict.get('zip') and row_dict.get('zip') not in philly_zipcodes):
