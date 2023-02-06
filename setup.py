@@ -7,8 +7,8 @@ setuptools.setup(
     name="sample-ais-geocoder", 
     version="0.0.1",
     author="CityGeo",
-    author_email="keisan.gittens@phila.gov",
-    description="Python package for geocoding addresses using the AIS API",
+    author_email="victor.espinoza@phila.gov",
+    description="Python package for geocoding addresses using the TOMTOM and AIS API",
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=setuptools.find_packages(),
@@ -22,6 +22,6 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     python_requires='>=3.6',
-    install_requires=['requests', ' retrying', 'smart_open']
+    install_requires=['requests', 'addresser', 'geopetl','passyunk']
 
 )
