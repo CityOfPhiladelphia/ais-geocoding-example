@@ -23,7 +23,10 @@ This package can be installed by opening the command line, from a directory of y
 From the project files, you will need access to opa property summary table, need to rename the (sample_config.py) to config.py and need to change the following variables: 
 
 - 'srid' can be set to 2272 or 4326.
-- 'gatekeeper_key' this key is necessary for the api to work. Request one by emailing maps@phila.gov 
+- 'gatekeeper_key' this key is necessary for the api to work. Request one by emailing maps@phila.gov
+- 'source_creeds' access to opa address table
+- 'ais_qry' http request to AIS API
+- 'tomtom_qry' http request to TOMTOM API
 
 #### Run
 python geocode_opa_property_summary.py
