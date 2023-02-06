@@ -1,14 +1,14 @@
-# Example AIS Geocoder Package
+# Example AIS & TOMTOM Geocoder Package
 This package is intended to serve as an example of how to use the AIS API and TOMTOM API with Python. 
 It is designed to import a table containing address, city, and zip code information and a user-defined variable, SRID, to standardize the address and
-then obtain the relating geographic coordinates. 
-1. the script, 'geocode_opa_property_summary.py', uses parsers passyunk and addresser to standardized the address value of each row
+then obtain the respective geographical coordinates. 
+
+1. the script, 'geocode_opa_property_summary.py', uses parsers Passyunk and Addresser to standardized the address value of each row
 https://github.com/CityOfPhiladelphia/passyunk
 https://pypi.org/project/addresser/
 2. then the table joins with ais address summary table on the standardized address column and obtain the coordinates for some of the addresses
 3. For the remainder of the missing coordinates we use TOMTOM or AIS APIs to request coordinates 
 
- 
 
 ## Installation
 _Before installing, it is advised to create and activate a virtual environment in order to isolate the dependencies for this project._
