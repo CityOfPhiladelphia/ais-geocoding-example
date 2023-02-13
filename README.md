@@ -1,7 +1,8 @@
 # Example AIS & TOMTOM Geocoder Package
 This package is intended to serve as an example of how to use the AIS API and TOMTOM API with Python. 
 It is designed to import a table containing address, city, and zip code information and a user-defined variable, SRID, to standardize the address and
-then obtain the respective geographical coordinates. 
+then obtain the respective geographical coordinates. The table in this example was obtained from kaggle.com and modified by adding addresses located in Philadelphia.
+https://www.kaggle.com/datasets/ahmedshahriarsakib/list-of-real-usa-addresses?resource=download
 
 1. the script, 'geocode_opa_property_summary.py', uses parsers Passyunk and Addresser to standardized the address value of each row
 https://github.com/CityOfPhiladelphia/passyunk
@@ -24,13 +25,12 @@ From the project files, you will need access to opa property summary table, need
 
 - 'srid' can be set to 2272 or 4326.
 - 'gatekeeper_key' this key is necessary for the api to work. Request one by emailing maps@phila.gov
-- 'source_creeds' access to opa address table
 - 'ais_qry' http request to AIS API
 - 'tomtom_qry' http request to TOMTOM API
 
 #### Run
-python geocode_opa_property_summary.py
+python geocode_sample_data.py
 
-A logfile will appear in your directory with detailed information about what addresses have worked or failed. Its name will look something like this `geocode_opa_data_{srid}.txt`. 
+A logfile will appear in your directory with detailed information about what addresses have worked or failed. Its name will look something like this `geocode_sample_data_log_{srid}.txt`. 
 
-Geocoded addresses will be in a csv format in the 'geocoded_opa_output_{srid}.csv'.  
+Geocoded addresses will be in a csv format in the 'geocoded_sample_data_output_{srid}.csv'.  
