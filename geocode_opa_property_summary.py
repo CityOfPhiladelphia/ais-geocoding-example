@@ -7,7 +7,7 @@ import logging
 import datetime
 from addresser import parse_location
 import cx_Oracle
-from config import ais_url, gatekeeperKey, source_creds, geocode_srid, ais_qry, tomtom_qry
+from config import ais_url, gatekeeperKey, geocode_srid, ais_qry, tomtom_qry, ais_request, tomtom_request
 
 
 # input data = opa property summary table (fields = MAILING_STREET, MAILING_CITY_STATE, MAILING_ZIP)
@@ -27,55 +27,6 @@ from config import ais_url, gatekeeperKey, source_creds, geocode_srid, ais_qry, 
 # Email ithelp@phila.gov to create a new support ticket, and copy maps@phila.gov on the email.
 # Request that IT Help route the ticket to CityGeo.
 # Describe the application that will be using AIS and provide a URL if possible.
-
-
-# request AIS for X and Y coordinates
-def ais_request(address_string,srid=2272):
-    '''
-    :param address_string:
-    :param srid: integer
-    :return: list containing X and Y coordinates
-    '''
-    request_str = ais_qry.format(ais_url=ais_url, geocode_field=address_string,srid=srid)
-    try:
-        r = requests.get(request_str, params=gatekeeperKey)
-        if r.status_code == 404:
-            logging.info('404 error')
-            print('AIS 404 error!!')
-            logging.info(request_str)
-    except Exception as e:
-        logging.info('''failed AIS request for {}'''.format(address_string))
-        logging.info(request_str)
-        raise e
-    # extract coordinates from json request response
-    feats = r.json()['features'][0]
-    geo = feats.get('geometry')
-    coordinates = geo.get('coordinates')
-    return coordinates
-
-# request tomtom for X and Y coordinates
-def tomtom_request(address='no address', city=None, state=None,zip=None,srid=2272):
-    '''
-    :param address_string: string
-    :param city: string
-    :param state: string
-    :param zip: string
-    :param srid: integer
-    :return: list containing X and Y coordinates
-    '''
-    if address:
-        address = address.split(' ')
-        address = '+'.join(address)
-    request_str = tomtom_qry.format(address=address, city=city,
-                                    state=state, zip=zip, srid=srid)
-    # send request to tomtom
-    try:
-        r = requests.get(request_str)
-        top_candidate = r.json().get('candidates')[0].get('location')
-        coordinates = [top_candidate.get('x'), top_candidate.get('y')]
-        return coordinates
-    except Exception as e:
-        logging.info('''failed TOMTOM request for {}'''.format(address))
 
 def main():
     # Logging Params:
@@ -116,18 +67,18 @@ def main():
     philly_zipcodes = [str(z) for z in philly_zipcodes]
     address_summary_rows = address_summary_rows.cutout('zip_code')
 
-    # connect to oracle opa
-    dsn = cx_Oracle.makedsn(source_creds.get('host'), 1521, service_name=source_creds.get('service_name'))
-    connection = cx_Oracle.connect(user=source_creds.get('user'), password=source_creds.get('password'),
-                                   dsn=dsn, encoding="UTF-8")
-    # input_addresses = input_addresses.selectnotnone('MAILING_ADDRESS_1')
-    input_addresses = etl.fromoraclesde(connection, 'PROPERTY_SUMMARY_NEW',
-            fields=['MAILING_STREET', 'MAILING_CITY_STATE', 'MAILING_ZIP'], limit=500)
-    input_addresses = input_addresses.selectnotnone('mailing_street')
+    # input_addresses = requests.get('https://opendata-downloads.s3.amazonaws.com/opa_properties_public.csv')
+    # input_addresses = input_addresses.text.splitlines()
+    # input_addresses = [s.split(',') for s in input_addresses]
+    # input_addresses = list(dict(zip(input_addresses[0], list(row))) for row in input_addresses[:400])
+    # input_addresses = etl.fromdicts(input_addresses, header=input_addresses[0])
+
+    input_addresses = etl.fromcsv('opa_properties_public.csv').cut(['mailing_street','mailing_city_state','mailing_zip'])
+    input_addresses = etl.head(input_addresses, 400)
+                                                # location or mailing street???
     input_addresses = etl.rename(input_addresses, {'mailing_street': 'address',
                                                    'mailing_city_state': 'city',
                                                    'mailing_zip':'zip'})
-
 
     #passayunk instance
     parser = PassyunkParser()
@@ -173,7 +124,6 @@ def main():
                 row_dict['state'] = parser_response.get('state')
             if parser_response and parser_response.get('zip') and not row_dict.get('zip'):
                 row_dict['zip'] = parser_response.get('zip')
-
         # add input row to output list
         dict_frame.append(row_dict)
 
@@ -185,7 +135,7 @@ def main():
     joined_addresses_to_address_summary = etl.leftjoin(input_addresses, address_summary_rows, lkey='std_address', rkey='street_address', presorted=False )
 
 
-    # empty
+    # empty list to store rows with coordinates
     geocoded_frame = []
     # use apis to get coordinates (AIS for philly addresses and tomtom for addresses outside of philly)
     for row in joined_addresses_to_address_summary[1:]:
@@ -204,6 +154,8 @@ def main():
         # address already has coordinates from join
         if row_dict.get('x_coordinate'):
             geocoded_frame.append(row_dict)
+            row_dict['time(s)'] = 'NA'
+            row_dict['API'] = 'NA'
             continue
         # address does not have coordinates from join
         else:
@@ -212,21 +164,42 @@ def main():
             if row_dict.get('city') and row_dict.get('city').lower() == 'philadelphia' or \
                     (row_dict.get('zip') and row_dict.get('zip') in philly_zipcodes):
                 try:
+                    t1 = datetime.datetime.now()
                     coordinates = ais_request(row_dict.get('address'), str(geocode_srid))
+                    t2 = datetime.datetime.now()
+                    time_delta = t2 - t1
+                    row_dict['time(s)'] = '{}.{}'.format(time_delta.seconds, time_delta.microseconds)
+                    row_dict['API'] = 'AIS'
                 except:
-                    coordinates = tomtom_request(address=row_dict.get('address'), city=row_dict.get('city'),
-                                                 zip=row_dict.get('zip'), srid=geocode_srid)
-                    print('%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%')
+                    print('here>?????????????????????????????????????????????????????')
+                    try:
+                        t1 = datetime.datetime.now()
+                        coordinates = tomtom_request(address=row_dict.get('address'), city=row_dict.get('city'),
+                                                     zip=row_dict.get('zip'), srid=geocode_srid)
+                        t2 = datetime.datetime.now()
+                        time_delta = t2 - t1
+                        row_dict['time(s)'] = '{}.{}'.format(time_delta.seconds, time_delta.microseconds)
+                        row_dict['API'] = 'TOMTOM'
+                    except:
+                        print('neither apis worked for address ', row_dict.get('address'))
+                        row_dict['time(s)'] = 'NA'
+                        row_dict['API'] = 'UNABLE TO GEOCODE'
                 else:
                     coordinates = ['NA','NA']
             #if city and zip not philly use tomtom
             elif (not row_dict.get('city') or row_dict.get('city') != 'philadelphia') \
                     and (row_dict.get('zip') and row_dict.get('zip') not in philly_zipcodes):
                 try:
+                    t1 = datetime.datetime.now()
                     coordinates = tomtom_request(address=row_dict.get('address'), city=row_dict.get('city'),
                                           zip=row_dict.get('zip'),srid=geocode_srid)
+                    t2 = datetime.datetime.now()
+                    time_delta = t2 - t1
+                    row_dict['time(s)'] = '{}.{}'.format(time_delta.seconds, time_delta.microseconds)
+                    row_dict['API'] = 'TOMTOM'
                 except:
-                    coordinates = ['NA','NA']
+                    row_dict['time(s)'] = 'NA'
+                    row_dict['API'] = 'UNABLE TO GEOCODE'
             # if we have coordinates from tomtom or ais, store in dictionary
             if coordinates:
                 row_dict['x_coordinate'] = coordinates[0]
@@ -236,8 +209,10 @@ def main():
             else:
                 logging.info('''unable to geocode {}'''.format(address_full))
 
-
-    geocoded_frame = etl.fromdicts(geocoded_frame, header=joined_addresses_to_address_summary[0])
+    header = list(joined_addresses_to_address_summary[0])
+    header.append('time(s)')
+    header.append('API')
+    geocoded_frame = etl.fromdicts(geocoded_frame, header=header)
     # write geocoded results to memory
     geocoded_frame.tocsv('geocoded_opa_output_{}.csv'.format(geocode_srid))
 
