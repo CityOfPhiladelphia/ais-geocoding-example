@@ -6,7 +6,7 @@ import csv
 import logging
 import datetime
 from addresser import parse_location
-from config import ais_url, gatekeeperKey, geocode_srid, ais_qry, tomtom_qry
+from config import ais_url, gatekeeperKey, geocode_srid, ais_qry, tomtom_qry, ais_request, tomtom_request
 
 
 # input data = https://www.kaggle.com/datasets/ahmedshahriarsakib/list-of-real-usa-addresses?resource=download
@@ -24,65 +24,10 @@ from config import ais_url, gatekeeperKey, geocode_srid, ais_qry, tomtom_qry
 # Describe the application that will be using AIS and provide a URL if possible.
 
 
-# request AIS for X and Y coordinates
-def ais_request(address_string,srid):
-    '''
-    :param address_string:
-    :param srid: integer
-    :return: list containing X and Y coordinates
-    '''
-    params = gatekeeperKey
-    request_str = ais_qry.format(ais_url=ais_url, geocode_field=address_string,srid=srid)
-    try:
-        r = requests.get(request_str, params=params)
-        if r.status_code == 404:
-            print('404 error')
-            logging.info(request_str)
-            raise
-    except Exception as e:
-        print("Failed AIS request")
-        logging.info('''failed request for {}'''.format(address_string))
-        logging.info(request_str)
-        raise e
-    # extract coordinates from json request response
-    feats = r.json()['features'][0]
-    geo = feats.get('geometry')
-    coords = geo.get('coordinates')
-    return coords
-
-
-# request tomtom for X and Y coordinates
-def tomtom_request(address='no address', city=None, state= None,zip=None,srid=2272):
-    '''
-    :param address_string: string
-    :param srid: integer
-    :return: list containing X and Y coordinates
-    '''
-    s = address.split(' ')
-    address = '+'.join(s)
-    request_str = tomtom_qry.format(address=address, city=city, state=state, zip=zip, srid=srid)
-    # send request to tomtom
-    try:
-        r = requests.get(request_str)
-    except Exception as e:
-        logging.info(request_str)
-        raise e
-    # try to get a top address candidate if any
-    try:
-        top_candidate = r.json().get('candidates')[0].get('location')
-        top_candidate = [top_candidate.get('x'), top_candidate.get('y')]
-    except Exception as e:
-        logging.info('''failed tomtom request for {}'''.format(address))
-        logging.info(request_str)
-        logging.info('')
-        raise e
-    return top_candidate
-
-
 def main():
     # Logging Params:
     today = datetime.date.today()
-    logfile = 'geocode_OPA_data_log_{}.txt'.format(today)
+    logfile = 'geocode_sample_data_log_{}.txt'.format(today)
     logging.basicConfig(filename=logfile, level=logging.INFO,
                         format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
     logging.info('''\n\n------------------------------Geocoding Sample Data------------------------------''')
@@ -211,8 +156,8 @@ def main():
             #if city and zip not philly use tomtom
             elif (not row_dict.get('city') or row_dict.get('city') != 'philadelphia') \
                     and (row_dict.get('zip') and row_dict.get('zip') not in philly_zipcodes):
-                t1 = datetime.datetime.now()
                 try:
+                    t1 = datetime.datetime.now()
                     coordinates = tomtom_request(address=row_dict.get('address'), city=row_dict.get('city'),
                                           state= row_dict.get('state'),zip=row_dict.get('zip'),srid=geocode_srid)
                     t2 = datetime.datetime.now()
@@ -242,7 +187,7 @@ def main():
     header.append('time(s)')
     geocoded_frame = etl.fromdicts(geocoded_frame, header=header)
     # write geocoded results to memory
-    geocoded_frame.tocsv('geocoded_sample_output_{}.csv'.format(geocode_srid))
+    geocoded_frame.tocsv('geocoded_sample_data_output_{}.csv'.format(geocode_srid))
 
 if __name__ == "__main__":
     main()
