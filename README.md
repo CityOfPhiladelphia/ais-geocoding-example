@@ -29,8 +29,8 @@ From the project files, you will need access to opa property summary table, need
 - 'tomtom_qry' http request to TOMTOM API
 
 #### Run
-python geocode_sample_data.py
+    python geocode_sample_data.py
 
 A logfile will appear in your directory with detailed information about what addresses have worked or failed. Its name will look something like this `geocode_sample_data_log_{srid}.txt`. 
 
-Geocoded addresses will be in a csv format in the 'geocoded_sample_data_output_{srid}.csv'.  
+Geocoded addresses will be in a csv format in the `geocoded_sample_data_output_{srid}.csv`.  
