@@ -29,6 +29,7 @@ from config import ais_url, gatekeeperKey, geocode_srid, ais_qry, tomtom_qry, ai
 # Describe the application that will be using AIS and provide a URL if possible.
 
 def main():
+    start = datetime.datetime.now()
     # Logging Params:
     today = datetime.date.today()
     logfile = 'geocode_sample_data_log_{}.txt'.format(today)
@@ -67,19 +68,23 @@ def main():
     philly_zipcodes = [str(z) for z in philly_zipcodes]
     address_summary_rows = address_summary_rows.cutout('zip_code')
 
-    # input_addresses = requests.get('https://opendata-downloads.s3.amazonaws.com/opa_properties_public.csv')
-    # input_addresses = input_addresses.text.splitlines()
-    # input_addresses = [s.split(',') for s in input_addresses]
-    # input_addresses = list(dict(zip(input_addresses[0], list(row))) for row in input_addresses[:400])
-    # input_addresses = etl.fromdicts(input_addresses, header=input_addresses[0])
+    # get input data from public opa properties
+    input_addresses = requests.get('https://opendata-downloads.s3.amazonaws.com/opa_properties_public.csv')
+    input_addresses = input_addresses.text.splitlines()
+    input_addresses = [s.split(',') for s in input_addresses]
+    input_addresses = list(dict(zip(input_addresses[0], list(row))) for row in input_addresses[:400])
+    input_addresses = etl.fromdicts(input_addresses, header=input_addresses[0])
 
-    input_addresses = etl.fromcsv('opa_properties_public.csv').cut(['mailing_street','mailing_city_state','mailing_zip'])
-    input_addresses = etl.head(input_addresses, 400)
+    #582096 total rows
+    #input_addresses = etl.fromcsv('opa_properties_public.csv',encoding="utf8").cut(['mailing_street','mailing_city_state','mailing_zip'])
+    total_rows = etl.nrows(input_addresses)
+    nrows= 500
+    input_addresses = etl.head(input_addresses, nrows)
                                                 # location or mailing street???
     input_addresses = etl.rename(input_addresses, {'mailing_street': 'address',
                                                    'mailing_city_state': 'city',
                                                    'mailing_zip':'zip'})
-
+    factor = int(total_rows/nrows)
     #passayunk instance
     parser = PassyunkParser()
     dict_frame = []
@@ -134,7 +139,6 @@ def main():
     #join input data with address summary table data on standardized street address column
     joined_addresses_to_address_summary = etl.leftjoin(input_addresses, address_summary_rows, lkey='std_address', rkey='street_address', presorted=False )
 
-
     # empty list to store rows with coordinates
     geocoded_frame = []
     # use apis to get coordinates (AIS for philly addresses and tomtom for addresses outside of philly)
@@ -165,27 +169,23 @@ def main():
                     (row_dict.get('zip') and row_dict.get('zip') in philly_zipcodes):
                 try:
                     t1 = datetime.datetime.now()
-                    coordinates = ais_request(row_dict.get('address'), str(geocode_srid))
+                    coordinates = ais_request(row_dict.get('address_std'), str(geocode_srid))
                     t2 = datetime.datetime.now()
                     time_delta = t2 - t1
                     row_dict['time(s)'] = '{}.{}'.format(time_delta.seconds, time_delta.microseconds)
                     row_dict['API'] = 'AIS'
                 except:
-                    print('here>?????????????????????????????????????????????????????')
                     try:
                         t1 = datetime.datetime.now()
-                        coordinates = tomtom_request(address=row_dict.get('address'), city=row_dict.get('city'),
-                                                     zip=row_dict.get('zip'), srid=geocode_srid)
+                        coordinates = tomtom_request(address=row_dict.get('address'), city=row_dict.get('city'),zip=row_dict.get('zip'), srid=geocode_srid)
                         t2 = datetime.datetime.now()
                         time_delta = t2 - t1
                         row_dict['time(s)'] = '{}.{}'.format(time_delta.seconds, time_delta.microseconds)
                         row_dict['API'] = 'TOMTOM'
                     except:
-                        print('neither apis worked for address ', row_dict.get('address'))
+                        logging.info('neither apis worked for address ', row_dict.get('address'))
                         row_dict['time(s)'] = 'NA'
                         row_dict['API'] = 'UNABLE TO GEOCODE'
-                else:
-                    coordinates = ['NA','NA']
             #if city and zip not philly use tomtom
             elif (not row_dict.get('city') or row_dict.get('city') != 'philadelphia') \
                     and (row_dict.get('zip') and row_dict.get('zip') not in philly_zipcodes):
@@ -213,6 +213,11 @@ def main():
     header.append('time(s)')
     header.append('API')
     geocoded_frame = etl.fromdicts(geocoded_frame, header=header)
+    end = datetime.datetime.now() - start
+    print('run time total seconds ', end.total_seconds())
+    est = int(end.total_seconds())*factor
+    print('run time total estimate  ', end.total_seconds()*factor)
+    print('estimated total data set time ', (end*factor))
     # write geocoded results to memory
     geocoded_frame.tocsv('geocoded_opa_output_{}.csv'.format(geocode_srid))
 
