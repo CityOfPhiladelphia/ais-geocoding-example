@@ -8,6 +8,7 @@ import datetime
 from addresser import parse_location
 import cx_Oracle
 from config import ais_url, gatekeeperKey, geocode_srid, ais_qry, tomtom_qry#, ais_request, tomtom_request
+import googlesearch
 
 
 # input data = opa property summary table (fields = MAILING_STREET, MAILING_CITY_STATE, MAILING_ZIP)
@@ -95,6 +96,7 @@ if __name__ == "__main__":
     # download address summary using requests
     address_summary_data = requests.get('https://opendata-downloads.s3.amazonaws.com/address_summary.csv')
     address_summary_data = address_summary_data.text.splitlines()
+    # address summary data in
     address_summary_data = [s.split(',') for s in address_summary_data]
     # # save address summary table to memory
     with open('address_summary_fields.csv', 'w', encoding='UTF8', newline='') as f:
@@ -117,6 +119,7 @@ if __name__ == "__main__":
     else:
         print('invalid srid')
         raise
+    # get zip codes in philadelphia
     cols = etl.columns(address_summary_rows)
     z = cols['zip_code']
     philly_zipcodes = list(set(z))
@@ -124,26 +127,32 @@ if __name__ == "__main__":
     philly_zipcodes = [str(z) for z in philly_zipcodes]
     address_summary_rows = address_summary_rows.cutout('zip_code')
 
-    # get input data from public opa properties
-    # input_addresses = requests.get('https://opendata-downloads.s3.amazonaws.com/opa_properties_public.csv')
-    # input_addresses = input_addresses.text.splitlines()
-    # input_addresses = [s.split(',') for s in input_addresses]
-    # input_addresses = list(dict(zip(input_addresses[0], list(row))) for row in input_addresses) #[:400]
-    # input_addresses = etl.fromdicts(input_addresses, header=input_addresses[0])
-
-    #582096 total rows
-    input_addresses = etl.fromcsv('opa_properties_public.csv',encoding="utf8").cut(['mailing_street','mailing_city_state','mailing_zip']).replace("mailing_street", "", None)
-    total_rows = etl.nrows(input_addresses)
-    total_rows2 = etl.selectnotnone(input_addresses,'mailing_street')
-    nrows = etl.nrows(total_rows2) #5000#
-    input_addresses = etl.head(input_addresses, nrows)
-    input_addresses = total_rows2
+    # input addresses
+    #################################################################################################################
+    try:
+    #582096 total rows. quicker from csv
+        input_addresses = etl.fromcsv('opa_properties_public.csv',encoding="utf8")\
+            .cut(['mailing_street','mailing_city_state','mailing_zip'])\
+            .replace("mailing_street", "", None).head(1000)
+        total_rows = etl.nrows(input_addresses)
+        total_rows2 = etl.selectnotnone(input_addresses,'mailing_street')
+        nrows = etl.nrows(total_rows2) #5000#
+        input_addresses = etl.head(input_addresses, nrows)
+        input_addresses = total_rows2
+        # factor = int(etl.nrows(total_rows2) / nrows)
+        # print('factor ', factor)
+    except:
+        # get input data from public opa properties
+        input_addresses = requests.get('https://opendata-downloads.s3.amazonaws.com/opa_properties_public.csv')
+        input_addresses = input_addresses.text.splitlines()
+        input_addresses = [s.split(',') for s in input_addresses]
+        input_addresses = list(dict(zip(input_addresses[0], list(row))) for row in input_addresses) #[:400]
+        input_addresses = etl.fromdicts(input_addresses, header=input_addresses[0])
+    #################################################################################################################
                                                 # location or mailing street???
     input_addresses = etl.rename(input_addresses, {'mailing_street': 'address',
                                                    'mailing_city_state': 'city',
                                                    'mailing_zip':'zip'})
-    factor = int(etl.nrows(total_rows2)/nrows)
-    print('factor ', factor)
     #passayunk instance
     parser = PassyunkParser()
     dict_frame = []
@@ -183,6 +192,7 @@ if __name__ == "__main__":
 
             # if parser response returns two streets assume it's an intersection
             if parser_response and parser_response.get('street1') and parser_response.get('street2'):
+                # reformat address 'street1+and+street2'
                 row_dict['address'] = parser_response.get('street1') + '+and+' + parser_response.get('street2')
 
             #if parser response returns city, state or zip update row dict
@@ -201,13 +211,12 @@ if __name__ == "__main__":
     input_addresses = etl.fromdicts(dict_frame, header=header)
     joined_none = etl.selectnotnone(input_addresses, 'std_address')
     no_std_address = etl.nrows(input_addresses) - etl.nrows(joined_none)
-    none_std_address = etl.selecteq(input_addresses,'std_address', None)
-    #none_std_address.tocsv('none_std_address_city_state.csv')
+    # none_std_address = etl.selecteq(input_addresses,'std_address', None)
+    # none_std_address.tocsv('none_std_address_city_state.csv')
 
     #join input data with address summary table data on standardized street address column
     joined_addresses_to_address_summary = etl.leftjoin(input_addresses, address_summary_rows, lkey='std_address', rkey='street_address', presorted=False )
     t = datetime.datetime.now() - start
-
 
     # empty list to store rows with coordinates
     geocoded_frame = []
@@ -274,33 +283,39 @@ if __name__ == "__main__":
                     row_dict['time(s)'] = '{}.{}'.format(time_delta.seconds, time_delta.microseconds)
                     row_dict['API'] = 'TOMTOM'
                 except:
-                    fails.append(row_dict)
-                    row_dict['time(s)'] = 'NA'
-                    row_dict['API'] = 'UNABLE TO GEOCODE'
+                    row_dict_fail = row_dict
+                    google_result = googlesearch.search(address_full)
+                    try:
+                        first_result = next(google_result)
+                    except:
+                        first_result = 'no google result'
+                    row_dict_fail['google_result'] = first_result
+                    row_dict_fail['time(s)'] = 'NA'
+                    row_dict_fail['API'] = 'UNABLE TO GEOCODE'
+                    fails.append(row_dict_fail)
+
             # if we have coordinates from tomtom or ais, store in dictionary
             if coordinates:
                 row_dict['x_coordinate'] = coordinates[0]
                 row_dict['y_coordinate'] = coordinates[1]
                 geocoded_frame.append(row_dict)
-            #
             else:
                 logging.info('''unable to geocode {}'''.format(address_full))
+    # write failures to memory
+    if fails:
+        fails_frame = etl.fromdicts(fails[1:], header=list(joined_addresses_to_address_summary[0]).append('google_result'))
+        fails_frame.tocsv('fails_frame.csv')
+    else:
+        print('no fails')
 
-    fails_frame = etl.fromdicts(fails, header=list(joined_addresses_to_address_summary[0]))
-    fails_frame.tocsv('fails_frame.csv')
     header = list(joined_addresses_to_address_summary[0])
     header.append('time(s)')
     header.append('API')
     geocoded_frame = etl.fromdicts(geocoded_frame, header=header)
     end = datetime.datetime.now() - start
     print('run time total seconds ', end.total_seconds())
-    est = int(end.total_seconds())*factor
-    print('run time total estimate  ', end.total_seconds()*factor)
-    print('estimated total data set time ', (end*factor))
+    # est = int(end.total_seconds())*factor
+    # print('run time total estimate  ', end.total_seconds()*factor)
+    #print('estimated total data set time ', (end*factor))
     # write geocoded results to memory
     geocoded_frame.tocsv('geocoded_opa_output_{}.csv'.format(geocode_srid))
-    failures = [fails]
-    with open('failed_addresses.csv', 'w') as f:
-        writer = csv.writer(f)
-        for val in fails:
-            writer.writerow([val])
