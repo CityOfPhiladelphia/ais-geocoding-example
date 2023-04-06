@@ -214,8 +214,6 @@ if __name__ == "__main__":
     input_addresses = etl.fromdicts(dict_frame, header=header)
     joined_none = etl.selectnotnone(input_addresses, 'std_address')
     no_std_address = etl.nrows(input_addresses) - etl.nrows(joined_none)
-    # none_std_address = etl.selecteq(input_addresses,'std_address', None)
-    # none_std_address.tocsv('none_std_address_city_state.csv')
 
     #join input data with address summary table data on standardized street address column
     joined_addresses_to_address_summary = etl.leftjoin(input_addresses, address_summary_rows, lkey='std_address', rkey='street_address', presorted=False )
@@ -224,7 +222,6 @@ if __name__ == "__main__":
     # empty list to store rows with coordinates
     geocoded_frame = []
     fails = []
-    fails.append('failed_addresses')
     # use apis to get coordinates (AIS for philly addresses and tomtom for addresses outside of philly)
     for row in joined_addresses_to_address_summary[1:]:
         ################################################################
@@ -255,6 +252,7 @@ if __name__ == "__main__":
                     (row_dict.get('zip') and row_dict.get('zip') in philly_zipcodes):
                 try:
                     t1 = datetime.datetime.now()
+                    # try and except?
                     if row_dict.get('address_std') and row_dict.get('address_std') != 'None':
                         coordinates, geocode_type = ais_request(row_dict.get('address_std'), str(geocode_srid))
                         row_dict['geocode_type'] = geocode_type
@@ -270,16 +268,24 @@ if __name__ == "__main__":
                     try:
                         t1 = datetime.datetime.now()
                         coordinates = tomtom_request(address=row_dict.get('address'), city=row_dict.get('city'),
-                                                     zip=row_dict.get('zip'),state=row_dict.get('state'), srid=geocode_srid)
+                                                     zip=row_dict.get('zip'), state=row_dict.get('state'), srid=geocode_srid)
                         t2 = datetime.datetime.now()
                         time_delta = t2 - t1
                         row_dict['time(s)'] = '{}.{}'.format(time_delta.seconds, time_delta.microseconds)
                         row_dict['API'] = 'TOMTOM'
                     except:
                         logging.info('neither apis worked for address ', row_dict.get('address'))
-                        row_dict['time(s)'] = 'NA'
-                        row_dict['API'] = 'UNABLE TO GEOCODE'
-                        fails.append(row_dict.get('address'))
+                        row_dict_fail = row_dict
+                        google_result = googlesearch.search(address_full)
+                        try:
+                            first_result = next(google_result)
+                        except:
+                            first_result = 'no google result'
+                        row_dict_fail['google_result'] = first_result
+                        row_dict_fail['time(s)'] = 'NA'
+                        row_dict_fail['API'] = 'UNABLE TO GEOCODE'
+                        f = f + 1
+                        fails.append(row_dict_fail)
             #if city and zip not philly use tomtom
             elif (not row_dict.get('city') or row_dict.get('city') != 'philadelphia') \
                     and (row_dict.get('zip') and row_dict.get('zip') not in philly_zipcodes):
@@ -312,14 +318,13 @@ if __name__ == "__main__":
                 geocoded_frame.append(row_dict)
             else:
                 logging.info('''unable to geocode {}'''.format(address_full))
+
     # write failures to memory
     if fails:
         header = list(joined_addresses_to_address_summary[0])
         header.append('google_result')
-        header.append('time(s)')
-        header.append('API')
         fails_frame = etl.fromdicts(fails[1:], header=header)
-        fails_frame.tocsv('fails_frame.csv')
+        fails_frame.tocsv('fails_frame.csv',encoding='utf-8')
     else:
         print('no fails')
 
