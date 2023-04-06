@@ -29,30 +29,32 @@ import googlesearch
 # Request that IT Help route the ticket to CityGeo.
 # Describe the application that will be using AIS and provide a URL if possible.
 # request AIS for X and Y coordinates
-def ais_request(address_string,srid):
+def ais_request(address_string_1,srid):
     '''
     :param address_string:
     :param srid: integer
     :return: list containing X and Y coordinates
     '''
     params = gatekeeperKey
-    request_str = ais_qry.format(ais_url=ais_url, geocode_field=address_string,srid=srid)
+    request_str = ais_qry.format(ais_url=ais_url, geocode_field=address_string_1,srid=srid)
+    print('request_str ', request_str)
     try:
         # extract coordinates from json request response
         r = ais_session.get(request_str, params=params)
         feats = r.json()['features'][0]
         geo = feats.get('geometry')
         coords = geo.get('coordinates')
+        geocode_type = geo.get('geocode_type')
         if r.status_code == 404:
             print('404 error')
             logging.info(request_str)
             raise
     except Exception as e:
-        logging.info('''failed request for {}'''.format(address_string))
+        logging.info('''failed request for {}'''.format(address_string_1))
         logging.info(request_str)
         return None
         # raise e
-    return coords
+    return [coords, geocode_type]
 
 
 # request tomtom for X and Y coordinates
@@ -105,13 +107,13 @@ if __name__ == "__main__":
 
     # required address_summary (source) table fields
     if geocode_srid == 2272:
-        adrsum_fields = ['street_address', 'geocode_x', 'geocode_y','zip_code']
+        adrsum_fields = ['street_address', 'geocode_x', 'geocode_y','zip_code', 'geocode_type']
         # load address summary data from csv to petl frame
         address_summary_rows = etl.fromcsv('address_summary_fields.csv').cut(adrsum_fields)
         address_summary_rows = etl.rename(address_summary_rows,
                                           {'geocode_x': 'x_coordinate', 'geocode_y': 'y_coordinate'})
     elif geocode_srid == 4326:
-        adrsum_fields = ['street_address', 'geocode_lon', 'geocode_lat','zip_code']
+        adrsum_fields = ['street_address', 'geocode_lon', 'geocode_lat','zip_code','geocode_type']
         # load address summary data from csv to petl frame
         address_summary_rows = etl.fromcsv('address_summary_fields.csv').cut(adrsum_fields)
         address_summary_rows = etl.rename(address_summary_rows,
@@ -153,6 +155,7 @@ if __name__ == "__main__":
     input_addresses = etl.rename(input_addresses, {'mailing_street': 'address',
                                                    'mailing_city_state': 'city',
                                                    'mailing_zip':'zip'})
+    input_addresses = input_addresses.head(2000)
     #passayunk instance
     parser = PassyunkParser()
     dict_frame = []
@@ -217,7 +220,7 @@ if __name__ == "__main__":
     #join input data with address summary table data on standardized street address column
     joined_addresses_to_address_summary = etl.leftjoin(input_addresses, address_summary_rows, lkey='std_address', rkey='street_address', presorted=False )
     t = datetime.datetime.now() - start
-
+    f =0
     # empty list to store rows with coordinates
     geocoded_frame = []
     fails = []
@@ -252,7 +255,13 @@ if __name__ == "__main__":
                     (row_dict.get('zip') and row_dict.get('zip') in philly_zipcodes):
                 try:
                     t1 = datetime.datetime.now()
-                    coordinates = ais_request(row_dict.get('address_std'), str(geocode_srid))
+                    if row_dict.get('address_std') and row_dict.get('address_std') != 'None':
+                        coordinates, geocode_type = ais_request(row_dict.get('address_std'), str(geocode_srid))
+                        row_dict['geocode_type'] = geocode_type
+                    elif address_full:
+                        coordinates, geocode_type = ais_request(address_full, str(geocode_srid))
+                        row_dict['geocode_type'] = geocode_type
+
                     t2 = datetime.datetime.now()
                     time_delta = t2 - t1
                     row_dict['time(s)'] = '{}.{}'.format(time_delta.seconds, time_delta.microseconds)
@@ -260,8 +269,8 @@ if __name__ == "__main__":
                 except:
                     try:
                         t1 = datetime.datetime.now()
-                        coordinates = tomtom_request(address=row_dict.get('address'), city=row_dict.get('city'),zip=row_dict.get('zip'),
-                                                     state=row_dict.get('state'), srid=geocode_srid)
+                        coordinates = tomtom_request(address=row_dict.get('address'), city=row_dict.get('city'),
+                                                     zip=row_dict.get('zip'),state=row_dict.get('state'), srid=geocode_srid)
                         t2 = datetime.datetime.now()
                         time_delta = t2 - t1
                         row_dict['time(s)'] = '{}.{}'.format(time_delta.seconds, time_delta.microseconds)
@@ -282,6 +291,7 @@ if __name__ == "__main__":
                     time_delta = t2 - t1
                     row_dict['time(s)'] = '{}.{}'.format(time_delta.seconds, time_delta.microseconds)
                     row_dict['API'] = 'TOMTOM'
+                    #print('api is TOMTOM 304')
                 except:
                     row_dict_fail = row_dict
                     google_result = googlesearch.search(address_full)
@@ -292,6 +302,7 @@ if __name__ == "__main__":
                     row_dict_fail['google_result'] = first_result
                     row_dict_fail['time(s)'] = 'NA'
                     row_dict_fail['API'] = 'UNABLE TO GEOCODE'
+                    f=f+1
                     fails.append(row_dict_fail)
 
             # if we have coordinates from tomtom or ais, store in dictionary
@@ -303,7 +314,11 @@ if __name__ == "__main__":
                 logging.info('''unable to geocode {}'''.format(address_full))
     # write failures to memory
     if fails:
-        fails_frame = etl.fromdicts(fails[1:], header=list(joined_addresses_to_address_summary[0]).append('google_result'))
+        header = list(joined_addresses_to_address_summary[0])
+        header.append('google_result')
+        header.append('time(s)')
+        header.append('API')
+        fails_frame = etl.fromdicts(fails[1:], header=header)
         fails_frame.tocsv('fails_frame.csv')
     else:
         print('no fails')
@@ -313,9 +328,6 @@ if __name__ == "__main__":
     header.append('API')
     geocoded_frame = etl.fromdicts(geocoded_frame, header=header)
     end = datetime.datetime.now() - start
-    print('run time total seconds ', end.total_seconds())
-    # est = int(end.total_seconds())*factor
-    # print('run time total estimate  ', end.total_seconds()*factor)
-    #print('estimated total data set time ', (end*factor))
+
     # write geocoded results to memory
     geocoded_frame.tocsv('geocoded_opa_output_{}.csv'.format(geocode_srid))
