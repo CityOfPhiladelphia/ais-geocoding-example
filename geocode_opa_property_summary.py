@@ -37,7 +37,6 @@ def ais_request(address_string_1,srid):
     '''
     params = gatekeeperKey
     request_str = ais_qry.format(ais_url=ais_url, geocode_field=address_string_1,srid=srid)
-    print('request_str ', request_str)
     try:
         # extract coordinates from json request response
         r = ais_session.get(request_str, params=params)
@@ -52,6 +51,7 @@ def ais_request(address_string_1,srid):
     except Exception as e:
         logging.info('''failed request for {}'''.format(address_string_1))
         logging.info(request_str)
+        logging.info(e)
         return None
         # raise e
     return [coords, geocode_type]
@@ -71,7 +71,6 @@ def tomtom_request(address='no address', city=None, state= None,zip=None,srid=22
     try:
         r = tomtom_session.get(request_str)
     except Exception as e:
-
         logging.info(request_str)
         raise e
     # try to get a top address candidate if any
@@ -132,7 +131,7 @@ if __name__ == "__main__":
     # input addresses
     #################################################################################################################
     try:
-    #582096 total rows. quicker from csv
+        #582096 total rows. quicker from csv
         input_addresses = etl.fromcsv('opa_properties_public.csv',encoding="utf8")\
             .cut(['mailing_street','mailing_city_state','mailing_zip'])\
             .replace("mailing_street", "", None).head(1000)
@@ -253,8 +252,8 @@ if __name__ == "__main__":
                 try:
                     t1 = datetime.datetime.now()
                     # try and except?
-                    if row_dict.get('address_std') and row_dict.get('address_std') != 'None':
-                        coordinates, geocode_type = ais_request(row_dict.get('address_std'), str(geocode_srid))
+                    if row_dict.get('std_address') and row_dict.get('std_address') != 'None':
+                        coordinates, geocode_type = ais_request(row_dict.get('std_address'), str(geocode_srid))
                         row_dict['geocode_type'] = geocode_type
                     elif address_full:
                         coordinates, geocode_type = ais_request(address_full, str(geocode_srid))
