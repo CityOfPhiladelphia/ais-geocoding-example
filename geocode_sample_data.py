@@ -19,64 +19,10 @@ import logging
 import datetime
 from addresser import parse_location
 import cx_Oracle
-from config import ais_url, gatekeeperKey, geocode_srid, ais_qry, tomtom_qry
+# from config import ais_url, gatekeeperKey, geocode_srid, ais_qry, tomtom_qry, ais_request, tomtom_request
+from utils import ais_request, tomtom_request,geocode_srid
 import googlesearch
 from os.path import exists
-
-# file_exists = exists(path_to_file)
-
-
-def ais_request(address_string,srid):
-    '''
-    :param address_string:
-    :param srid: integer
-    :return: list containing X and Y coordinates
-    '''
-    params = gatekeeperKey
-    request_str = ais_qry.format(ais_url=ais_url, geocode_field=address_string,srid=srid)
-    try:
-        # extract coordinates from json request response
-        r = ais_session.get(request_str, params=params)
-        feats = r.json()['features'][0]
-        geo = feats.get('geometry')
-        coords = geo.get('coordinates')
-        if r.status_code == 404:
-            print('404 error')
-            logging.info(request_str)
-            raise
-    except Exception as e:
-        logging.info('''failed request for {}'''.format(address_string))
-        logging.info(request_str)
-        return None
-        # raise e
-    return coords
-
-
-# request tomtom for X and Y coordinates
-def tomtom_request(address='no address', city=None, state= None,zip=None,srid=2272):
-    '''
-    :param address_string: string
-    :param srid: integer
-    :return: list containing X and Y coordinates
-    '''
-    s = address.split(' ')
-    address = '+'.join(s)
-    request_str = tomtom_qry.format(address=address, city=city, state=state, zip=zip, srid=srid)
-    try:
-        r = tomtom_session.get(request_str)
-    except Exception as e:
-        logging.info(request_str)
-        raise e
-    # try to get a top address candidate if any
-    try:
-        top_candidate = r.json().get('candidates')[0].get('location')
-        top_candidate = [top_candidate.get('x'), top_candidate.get('y')]
-    except Exception as e:
-        logging.info('''failed tomtom request for {}'''.format(address))
-        logging.info(request_str)
-        logging.info('')
-        raise e
-    return top_candidate
 
 
 #def main():
@@ -105,13 +51,13 @@ if __name__ == "__main__":
 
     # required address_summary table fields
     if geocode_srid == 2272:
-        adrsum_fields = ['street_address', 'geocode_x', 'geocode_y','zip_code']
+        adrsum_fields = ['street_address', 'geocode_x', 'geocode_y','zip_code','geocode_type']
         # load address summary data from csv to petl frame
         address_summary_rows = etl.fromcsv('address_summary_data.csv').cut(adrsum_fields)
         address_summary_rows = etl.rename(address_summary_rows,
                                           {'geocode_x': 'x_coordinate', 'geocode_y': 'y_coordinate'})
     elif geocode_srid == 4326:
-        adrsum_fields = ['street_address', 'geocode_lon', 'geocode_lat','zip_code']
+        adrsum_fields = ['street_address', 'geocode_lon', 'geocode_lat','zip_code','geocode_type']
         # load address summary data from csv to petl frame
         address_summary_rows = etl.fromcsv('address_summary_data.csv').cut(adrsum_fields)
         address_summary_rows = etl.rename(address_summary_rows,
@@ -228,11 +174,12 @@ if __name__ == "__main__":
                     (row_dict.get('zip') and row_dict.get('zip') in philly_zipcodes):
                 try:
                     t1 = datetime.datetime.now()
-                    coordinates = ais_request(row_dict.get('address_std'), str(geocode_srid))
+                    coordinates, geocode_type = ais_request(row_dict.get('address_std'), str(geocode_srid))
                     t2 = datetime.datetime.now()
                     time_delta = t2 - t1
                     row_dict['time(s)'] = '{}.{}'.format(time_delta.seconds, time_delta.microseconds)
                     row_dict['API'] = 'AIS'
+                    row_dict['geocode_type'] = geocode_type
                 except:
                     try:
                         t1 = datetime.datetime.now()
