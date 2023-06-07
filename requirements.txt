@@ -1,3 +1,4 @@
-requests
-retrying
-smart_open
+requests==2.28.2
+passyunk==1.0
+petl==1.7.12
+geopetl ==1.0
